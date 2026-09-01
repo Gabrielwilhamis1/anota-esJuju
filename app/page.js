@@ -39,6 +39,7 @@ export default function Home() {
   const [mobileNav, setMobileNav] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState("overview");
+  const [savedMessage, setSavedMessage] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -150,6 +151,8 @@ export default function Home() {
     }));
     setModalOpen(false);
     setEditing(null);
+    setSavedMessage(true);
+    setTimeout(() => setSavedMessage(false), 3500);
   }
 
   function removeNote(id) {
@@ -230,6 +233,7 @@ export default function Home() {
         )}
       </section>
 
+      {savedMessage && <div className="saved-message" role="status">Anotação feita, te amo! ❤️</div>}
       {modalOpen && <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setModalOpen(false)}><div className="modal"><div className="modal-title"><div><span><NotePencil /></span><div><h2>{editing ? "Editar anotação" : "Nova anotação"}</h2><p>{formatLong(selected)}</p></div></div><button onClick={() => setModalOpen(false)}><X /></button></div><form onSubmit={saveNote}><label>Título<input name="title" defaultValue={editing?.title} placeholder="Ex: Revisar matéria de Cálculo" required autoFocus /></label><label>Anotação<textarea name="text" defaultValue={editing?.text} placeholder="Escreva aqui tudo o que precisa lembrar..." rows="6" required /></label><div className="form-row"><label>Categoria<select name="category" defaultValue={editing?.category || "Faculdade"}><option>Faculdade</option><option>Trabalhos</option><option>Pessoal</option><option>Projetos</option></select></label><label>Horário<input type="time" name="time" defaultValue={editing?.time || ""} /></label></div><div className="modal-actions"><button type="button" onClick={() => setModalOpen(false)}>Cancelar</button><button className="save-button" type="submit">{editing ? "Salvar alterações" : "Criar anotação"}</button></div></form></div></div>}
     </main>
   );
