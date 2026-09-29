@@ -5,6 +5,12 @@ export const metadata = {
   description: "Organize seus estudos, tarefas e ideias em um só lugar.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 export default function RootLayout({ children }) {
   return (
     <html lang="pt-BR">
