@@ -28,6 +28,20 @@ function formatLong(key) {
   return new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "2-digit", month: "long" }).format(parseKey(key));
 }
 
+function toLocalInput(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function reminderLabel(note) {
+  if (!note.reminderEnabled || !note.reminderAt) return null;
+  if (new Date(note.reminderAt) <= new Date()) return "Enviado";
+  if (note.reminderStatus === "error") return "Erro no lembrete";
+  if (note.reminderStatus === "pending") return "Aguardando agendamento";
+  return `Lembrete ${new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(note.reminderAt))}`;
+}
+
 export default function Home() {
   const today = new Date();
   const [month, setMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -128,7 +142,16 @@ export default function Home() {
       try {
         localStorage.setItem("juju-notes", JSON.stringify(next));
       } catch {}
-      fetch("/api/notes", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) }).catch(() => {});
+      fetch("/api/notes", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) })
+        .then(async (response) => {
+          if (!response.ok) throw new Error();
+          const data = await response.json();
+          if (data.notes) {
+            setNotes(data.notes);
+            localStorage.setItem("juju-notes", JSON.stringify(data.notes));
+          }
+        })
+        .catch(() => {});
       return next;
     });
   }
@@ -136,6 +159,13 @@ export default function Home() {
   function saveNote(event) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
+    const reminderEnabled = data.get("reminderEnabled") === "on";
+    const reminderValue = data.get("reminderAt");
+    const reminderAt = reminderEnabled && reminderValue ? new Date(reminderValue).toISOString() : null;
+    if (reminderEnabled && (!reminderAt || new Date(reminderAt) <= new Date())) {
+      window.alert("Escolha uma data e um horário futuros para o lembrete.");
+      return;
+    }
     const item = {
       id: editing?.id || Date.now(),
       title: data.get("title").trim(),
@@ -143,7 +173,10 @@ export default function Home() {
       category: data.get("category"),
       time: data.get("time"),
       color: editing?.color || COLORS[allNotes.length % COLORS.length],
-      favorite: editing?.favorite || false
+      favorite: editing?.favorite || false,
+      reminderEnabled,
+      reminderAt,
+      reminderStatus: reminderEnabled ? "saving" : "disabled"
     };
     updateNotes((old) => ({
       ...old,
@@ -226,7 +259,7 @@ export default function Home() {
             <section className="day-panel card">
               <div className="day-head"><div><span className="eyebrow">ANOTAÇÕES DO DIA</span><h2>{formatLong(selected)}</h2><p>{selectedNotes.length ? `${selectedNotes.length} ${selectedNotes.length === 1 ? "anotação" : "anotações"}` : "Seu dia está livre"}</p></div><button className="add-round" onClick={() => openEditor()}><Plus /></button></div>
               <div className="notes-list">
-                {selectedNotes.length ? selectedNotes.map((note) => <article className="day-note" key={note.id}><i style={{ background: note.color }} /><div className="note-body" onClick={() => openEditor(note)}><div><span>{note.category}</span>{note.time && <small><Clock /> {note.time}</small>}</div><h3>{note.title}</h3><p>{note.text}</p></div><button className={`favorite ${note.favorite ? "active" : ""}`} onClick={() => toggleFavorite(note.id)} aria-label={note.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}><Star weight={note.favorite ? "fill" : "regular"} /></button><button className="delete" onClick={() => removeNote(note.id)} aria-label="Excluir"><Trash /></button></article>) : <div className="empty"><span><Sparkle weight="duotone" /></span><h3>Nada por aqui ainda</h3><p>Registre uma aula, tarefa, lembrete ou uma ideia para este dia.</p><button onClick={() => openEditor()}><Plus /> Criar anotação</button></div>}
+                {selectedNotes.length ? selectedNotes.map((note) => <article className="day-note" key={note.id}><i style={{ background: note.color }} /><div className="note-body" onClick={() => openEditor(note)}><div><span>{note.category}</span>{note.time && <small><Clock /> {note.time}</small>}</div><h3>{note.title}</h3><p>{note.text}</p>{reminderLabel(note) && <div className={`reminder-status ${note.reminderStatus === "error" ? "error" : ""}`}><Bell weight="fill" /> {reminderLabel(note)}</div>}</div><button className={`favorite ${note.favorite ? "active" : ""}`} onClick={() => toggleFavorite(note.id)} aria-label={note.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}><Star weight={note.favorite ? "fill" : "regular"} /></button><button className="delete" onClick={() => removeNote(note.id)} aria-label="Excluir"><Trash /></button></article>) : <div className="empty"><span><Sparkle weight="duotone" /></span><h3>Nada por aqui ainda</h3><p>Registre uma aula, tarefa, lembrete ou uma ideia para este dia.</p><button onClick={() => openEditor()}><Plus /> Criar anotação</button></div>}
               </div>
             </section>
           </div>
@@ -234,7 +267,7 @@ export default function Home() {
       </section>
 
       {savedMessage && <div className="saved-message" role="status">Anotação feita, te amo! ❤️</div>}
-      {modalOpen && <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setModalOpen(false)}><div className="modal"><div className="modal-title"><div><span><NotePencil /></span><div><h2>{editing ? "Editar anotação" : "Nova anotação"}</h2><p>{formatLong(selected)}</p></div></div><button onClick={() => setModalOpen(false)}><X /></button></div><form onSubmit={saveNote}><label>Título<input name="title" defaultValue={editing?.title} placeholder="Ex: Revisar matéria de Cálculo" required autoFocus /></label><label>Anotação<textarea name="text" defaultValue={editing?.text} placeholder="Escreva aqui tudo o que precisa lembrar..." rows="6" required /></label><div className="form-row"><label>Categoria<select name="category" defaultValue={editing?.category || "Faculdade"}><option>Faculdade</option><option>Trabalhos</option><option>Pessoal</option><option>Projetos</option></select></label><label>Horário<input type="time" name="time" defaultValue={editing?.time || ""} /></label></div><div className="modal-actions"><button type="button" onClick={() => setModalOpen(false)}>Cancelar</button><button className="save-button" type="submit">{editing ? "Salvar alterações" : "Criar anotação"}</button></div></form></div></div>}
+      {modalOpen && <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setModalOpen(false)}><div className="modal"><div className="modal-title"><div><span><NotePencil /></span><div><h2>{editing ? "Editar anotação" : "Nova anotação"}</h2><p>{formatLong(selected)}</p></div></div><button onClick={() => setModalOpen(false)}><X /></button></div><form onSubmit={saveNote}><label>Título<input name="title" defaultValue={editing?.title} placeholder="Ex: Revisar matéria de Cálculo" required autoFocus /></label><label>Anotação<textarea name="text" defaultValue={editing?.text} placeholder="Escreva aqui tudo o que precisa lembrar..." rows="6" required /></label><div className="form-row"><label>Categoria<select name="category" defaultValue={editing?.category || "Faculdade"}><option>Faculdade</option><option>Trabalhos</option><option>Pessoal</option><option>Projetos</option></select></label><label>Horário<input type="time" name="time" defaultValue={editing?.time || ""} /></label></div><div className="reminder-box"><label className="reminder-toggle"><input type="checkbox" name="reminderEnabled" defaultChecked={editing?.reminderEnabled} /><span><Bell weight="fill" /></span><div><strong>Enviar lembrete por e-mail</strong><small>O e-mail será criado automaticamente com esta anotação.</small></div></label><label>Data e hora do lembrete<input type="datetime-local" name="reminderAt" defaultValue={toLocalInput(editing?.reminderAt)} /></label></div><div className="modal-actions"><button type="button" onClick={() => setModalOpen(false)}>Cancelar</button><button className="save-button" type="submit">{editing ? "Salvar alterações" : "Criar anotação"}</button></div></form></div></div>}
     </main>
   );
 }
